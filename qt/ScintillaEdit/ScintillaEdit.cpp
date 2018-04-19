@@ -1795,8 +1795,8 @@ sptr_t ScintillaEdit::zoom() const {
     return send(SCI_GETZOOM, 0, 0);
 }
 
-sptr_t ScintillaEdit::createDocument(sptr_t bytes, sptr_t documentOption) {
-    return send(SCI_CREATEDOCUMENT, bytes, documentOption);
+sptr_t ScintillaEdit::createDocument(sptr_t bytes, sptr_t documentOptions) {
+    return send(SCI_CREATEDOCUMENT, bytes, documentOptions);
 }
 
 void ScintillaEdit::addRefDocument(sptr_t doc) {
@@ -1805,6 +1805,10 @@ void ScintillaEdit::addRefDocument(sptr_t doc) {
 
 void ScintillaEdit::releaseDocument(sptr_t doc) {
     send(SCI_RELEASEDOCUMENT, 0, doc);
+}
+
+sptr_t ScintillaEdit::documentOptions() const {
+    return send(SCI_GETDOCUMENTOPTIONS, 0, 0);
 }
 
 sptr_t ScintillaEdit::modEventMask() const {
@@ -2671,8 +2675,8 @@ sptr_t ScintillaEdit::technology() const {
     return send(SCI_GETTECHNOLOGY, 0, 0);
 }
 
-sptr_t ScintillaEdit::createLoader(sptr_t bytes, sptr_t documentOption) {
-    return send(SCI_CREATELOADER, bytes, documentOption);
+sptr_t ScintillaEdit::createLoader(sptr_t bytes, sptr_t documentOptions) {
+    return send(SCI_CREATELOADER, bytes, documentOptions);
 }
 
 void ScintillaEdit::findIndicatorShow(sptr_t start, sptr_t end) {
