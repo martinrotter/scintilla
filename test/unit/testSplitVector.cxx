@@ -1,5 +1,6 @@
 // Unit Tests for Scintilla internal data structures
 
+#include <cstddef>
 #include <cstring>
 
 #include <stdexcept>
@@ -274,8 +275,8 @@ TEST_CASE("SplitVector") {
 		for (int i=0; i<testLength; i++)
 			sv.SetValueAt(i, i+12);
 		REQUIRE(testLength == sv.Length());
-		for (int i=sv.Length()-1; i>=0; i--) {
-			sv.InsertValue(i, 1, i+5);
+		for (ptrdiff_t i=sv.Length()-1; i>=0; i--) {
+			sv.InsertValue(i, 1, static_cast<int>(i+5));
 			sv.Delete(i+1);
 		}
 		for (int i=0; i<sv.Length(); i++)

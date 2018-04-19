@@ -25,54 +25,75 @@
 #include "CellBuffer.h"
 #include "UniConversion.h"
 
+namespace Scintilla {
+
+class ILineVector {
+public:
+	virtual void Init() = 0;
+	virtual void SetPerLine(PerLine *pl) = 0;
+	virtual void InsertText(Sci::Line line, Sci::Position delta) = 0;
+	virtual void InsertLine(Sci::Line line, Sci::Position position, bool lineStart) = 0;
+	virtual void SetLineStart(Sci::Line line, Sci::Position position) = 0;
+	virtual void RemoveLine(Sci::Line line) = 0;
+	virtual Sci::Line Lines() const = 0;
+	virtual Sci::Line LineFromPosition(Sci::Position pos) const = 0;
+	virtual Sci::Position LineStart(Sci::Line line) const = 0;
+	virtual ~ILineVector() {}
+};
+
+}
+
 using namespace Scintilla;
 
-LineVector::LineVector() : starts(256), perLine(0) {
-	Init();
-}
-
-LineVector::~LineVector() {
-	starts.DeleteAll();
-}
-
-void LineVector::Init() {
-	starts.DeleteAll();
-	if (perLine) {
-		perLine->Init();
+template <typename POS>
+class LineVector : public ILineVector {
+	Partitioning<POS> starts;
+	PerLine *perLine;
+public:
+	LineVector() : starts(256), perLine(0) {
+		Init();
+ 	}
+	~LineVector() override {
+ 	}
+	void Init() override {
+		starts.DeleteAll();
+		if (perLine) {
+			perLine->Init();
+		}
+ 	}
+	void SetPerLine(PerLine *pl) override {
+		perLine = pl;
 	}
-}
-
-void LineVector::SetPerLine(PerLine *pl) {
-	perLine = pl;
-}
-
-void LineVector::InsertText(Sci::Line line, Sci::Position delta) {
-	starts.InsertText(line, delta);
-}
-
-void LineVector::InsertLine(Sci::Line line, Sci::Position position, bool lineStart) {
-	starts.InsertPartition(line, position);
-	if (perLine) {
-		if ((line > 0) && lineStart)
-			line--;
-		perLine->InsertLine(line);
+	void InsertText(Sci::Line line, Sci::Position delta) override {
+		starts.InsertText(static_cast<POS>(line), static_cast<POS>(delta));
 	}
-}
-
-void LineVector::SetLineStart(Sci::Line line, Sci::Position position) {
-	starts.SetPartitionStartPosition(line, position);
-}
-
-void LineVector::RemoveLine(Sci::Line line) {
-	starts.RemovePartition(line);
-	if (perLine) {
-		perLine->RemoveLine(line);
+	void InsertLine(Sci::Line line, Sci::Position position, bool lineStart) override {
+		starts.InsertPartition(static_cast<POS>(line), static_cast<POS>(position));
+		if (perLine) {
+			if ((line > 0) && lineStart)
+				line--;
+			perLine->InsertLine(line);
+		}
 	}
-}
-
-Sci::Line LineVector::LineFromPosition(Sci::Position pos) const {
-	return starts.PartitionFromPosition(pos);
-}
+	void SetLineStart(Sci::Line line, Sci::Position position) override {
+		starts.SetPartitionStartPosition(static_cast<POS>(line), static_cast<POS>(position));
+	}
+	void RemoveLine(Sci::Line line) override {
+		starts.RemovePartition(static_cast<POS>(line));
+		if (perLine) {
+			perLine->RemoveLine(line);
+		}
+	}
+	Sci::Line Lines() const override {
+		return static_cast<Sci::Line>(starts.Partitions());
+	}
+	Sci::Line LineFromPosition(Sci::Position pos) const override {
+		return static_cast<Sci::Line>(starts.PartitionFromPosition(static_cast<POS>(pos)));
+	}
+	Sci::Position LineStart(Sci::Line line) const override {
+		return starts.PositionFromPartition(static_cast<POS>(line));
+	}
+};
 
 Action::Action() {
 	at = startAction;
@@ -97,7 +118,7 @@ void Action::Create(actionType at_, Sci::Position position_, const char *data_, 
 	position = position_;
 	at = at_;
 	if (lenData_) {
-		data = std::unique_ptr<char []>(new char[lenData_]);
+		data = std::make_unique<char[]>(lenData_);
 		memcpy(&data[0], data_, lenData_);
 	}
 	lenData = lenData_;
@@ -342,11 +363,15 @@ void UndoHistory::CompletedRedoStep() {
 	currentAction++;
 }
 
-CellBuffer::CellBuffer(bool hasStyles_) :
-	hasStyles(hasStyles_) {
+CellBuffer::CellBuffer(bool hasStyles_, bool largeDocument_) :
+	hasStyles(hasStyles_), largeDocument(largeDocument_) {
 	readOnly = false;
 	utf8LineEnds = 0;
 	collectingUndo = true;
+	if (largeDocument)
+		plv = std::make_unique<LineVector<Sci::Position>>();
+	else
+		plv = std::make_unique<LineVector<int>>();
 }
 
 CellBuffer::~CellBuffer() {
@@ -354,6 +379,10 @@ CellBuffer::~CellBuffer() {
 
 char CellBuffer::CharAt(Sci::Position position) const {
 	return substance.ValueAt(position);
+}
+
+unsigned char CellBuffer::UCharAt(Sci::Position position) const {
+	return static_cast<unsigned char>(substance.ValueAt(position));
 }
 
 void CellBuffer::GetCharRange(char *buffer, Sci::Position position, Sci::Position lengthRetrieve) const {
@@ -399,7 +428,7 @@ const char *CellBuffer::RangePointer(Sci::Position position, Sci::Position range
 }
 
 Sci::Position CellBuffer::GapPosition() const {
-	return static_cast<Sci::Position>(substance.GapPosition());
+	return substance.GapPosition();
 }
 
 // The char* returned is to an allocation owned by the undo history
@@ -468,7 +497,7 @@ const char *CellBuffer::DeleteChars(Sci::Position position, Sci::Position delete
 }
 
 Sci::Position CellBuffer::Length() const {
-	return static_cast<Sci::Position>(substance.Length());
+	return substance.Length();
 }
 
 void CellBuffer::Allocate(Sci::Position newSize) {
@@ -505,11 +534,11 @@ bool CellBuffer::ContainsLineEnd(const char *s, Sci::Position length) const {
 }
 
 void CellBuffer::SetPerLine(PerLine *pl) {
-	lv.SetPerLine(pl);
+	plv->SetPerLine(pl);
 }
 
 Sci::Line CellBuffer::Lines() const {
-	return lv.Lines();
+	return plv->Lines();
 }
 
 Sci::Position CellBuffer::LineStart(Sci::Line line) const {
@@ -518,7 +547,11 @@ Sci::Position CellBuffer::LineStart(Sci::Line line) const {
 	else if (line >= Lines())
 		return Length();
 	else
-		return lv.LineStart(line);
+		return plv->LineStart(line);
+}
+
+Sci::Line CellBuffer::LineFromPosition(Sci::Position pos) const {
+	return plv->LineFromPosition(pos);
 }
 
 bool CellBuffer::IsReadOnly() const {
@@ -527,6 +560,14 @@ bool CellBuffer::IsReadOnly() const {
 
 void CellBuffer::SetReadOnly(bool set) {
 	readOnly = set;
+}
+
+bool CellBuffer::IsLarge() const {
+	return largeDocument;
+}
+
+bool CellBuffer::HasStyles() const {
+	return hasStyles;
 }
 
 void CellBuffer::SetSavePoint() {
@@ -556,11 +597,11 @@ bool CellBuffer::TentativeActive() const {
 // Without undo
 
 void CellBuffer::InsertLine(Sci::Line line, Sci::Position position, bool lineStart) {
-	lv.InsertLine(line, position, lineStart);
+	plv->InsertLine(line, position, lineStart);
 }
 
 void CellBuffer::RemoveLine(Sci::Line line) {
-	lv.RemoveLine(line);
+	plv->RemoveLine(line);
 }
 
 bool CellBuffer::UTF8LineEndOverlaps(Sci::Position position) const {
@@ -575,13 +616,13 @@ bool CellBuffer::UTF8LineEndOverlaps(Sci::Position position) const {
 
 void CellBuffer::ResetLineEnds() {
 	// Reinitialize line data -- too much work to preserve
-	lv.Init();
+	plv->Init();
 
-	Sci::Position position = 0;
-	Sci::Position length = Length();
+	const Sci::Position position = 0;
+	const Sci::Position length = Length();
 	Sci::Line lineInsert = 1;
-	bool atLineStart = true;
-	lv.InsertText(lineInsert-1, length);
+	const bool atLineStart = true;
+	plv->InsertText(lineInsert-1, length);
 	unsigned char chBeforePrev = 0;
 	unsigned char chPrev = 0;
 	for (Sci::Position i = 0; i < length; i++) {
@@ -592,7 +633,7 @@ void CellBuffer::ResetLineEnds() {
 		} else if (ch == '\n') {
 			if (chPrev == '\r') {
 				// Patch up what was end of line
-				lv.SetLineStart(lineInsert - 1, (position + i) + 1);
+				plv->SetLineStart(lineInsert - 1, (position + i) + 1);
 			} else {
 				InsertLine(lineInsert, (position + i) + 1, atLineStart);
 				lineInsert++;
@@ -625,10 +666,10 @@ void CellBuffer::BasicInsertString(Sci::Position position, const char *s, Sci::P
 		style.InsertValue(position, insertLength, 0);
 	}
 
-	Sci::Line lineInsert = lv.LineFromPosition(position) + 1;
-	bool atLineStart = lv.LineStart(lineInsert-1) == position;
+	Sci::Line lineInsert = plv->LineFromPosition(position) + 1;
+	const bool atLineStart = plv->LineStart(lineInsert-1) == position;
 	// Point all the lines after the insertion point further along in the buffer
-	lv.InsertText(lineInsert-1, insertLength);
+	plv->InsertText(lineInsert-1, insertLength);
 	unsigned char chBeforePrev = substance.ValueAt(position - 2);
 	unsigned char chPrev = substance.ValueAt(position - 1);
 	if (chPrev == '\r' && chAfter == '\n') {
@@ -648,7 +689,7 @@ void CellBuffer::BasicInsertString(Sci::Position position, const char *s, Sci::P
 		} else if (ch == '\n') {
 			if (chPrev == '\r') {
 				// Patch up what was end of line
-				lv.SetLineStart(lineInsert - 1, (position + i) + 1);
+				plv->SetLineStart(lineInsert - 1, (position + i) + 1);
 			} else {
 				InsertLine(lineInsert, (position + i) + 1, atLineStart);
 				lineInsert++;
@@ -695,20 +736,20 @@ void CellBuffer::BasicDeleteChars(Sci::Position position, Sci::Position deleteLe
 	if ((position == 0) && (deleteLength == substance.Length())) {
 		// If whole buffer is being deleted, faster to reinitialise lines data
 		// than to delete each line.
-		lv.Init();
+		plv->Init();
 	} else {
 		// Have to fix up line positions before doing deletion as looking at text in buffer
 		// to work out which lines have been removed
 
-		Sci::Line lineRemove = lv.LineFromPosition(position) + 1;
-		lv.InsertText(lineRemove-1, - (deleteLength));
+		Sci::Line lineRemove = plv->LineFromPosition(position) + 1;
+		plv->InsertText(lineRemove-1, - (deleteLength));
 		const unsigned char chPrev = substance.ValueAt(position - 1);
 		const unsigned char chBefore = chPrev;
 		unsigned char chNext = substance.ValueAt(position);
 		bool ignoreNL = false;
 		if (chPrev == '\r' && chNext == '\n') {
 			// Move back one
-			lv.SetLineStart(lineRemove, position);
+			plv->SetLineStart(lineRemove, position);
 			lineRemove++;
 			ignoreNL = true; 	// First \n is not real deletion
 		}
@@ -749,7 +790,7 @@ void CellBuffer::BasicDeleteChars(Sci::Position position, Sci::Position deleteLe
 		if (chBefore == '\r' && chAfter == '\n') {
 			// Using lineRemove-1 as cr ended line before start of deletion
 			RemoveLine(lineRemove - 1);
-			lv.SetLineStart(lineRemove - 1, position + 1);
+			plv->SetLineStart(lineRemove - 1, position + 1);
 		}
 	}
 	substance.DeleteRange(position, deleteLength);
