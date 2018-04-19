@@ -12,8 +12,6 @@
  * This file is dual licensed under LGPL v2.1 and the Scintilla license (http://www.scintilla.org/License.txt).
  */
 
-#include <sys/time.h>
-
 #include <cstddef>
 #include <cstdlib>
 #include <cassert>
@@ -25,12 +23,15 @@
 #include <map>
 #include <memory>
 
+#include <sys/time.h>
+
 #import <Foundation/NSGeometry.h>
 
 #import "Platform.h"
 
 #include "StringCopy.h"
 #include "XPM.h"
+#include "UniConversion.h"
 
 #import "ScintillaView.h"
 #import "ScintillaCocoa.h"
@@ -145,12 +146,12 @@ SurfaceImpl::SurfaceImpl() {
 //--------------------------------------------------------------------------------------------------
 
 SurfaceImpl::~SurfaceImpl() {
-	Release();
+	Clear();
 }
 
 //--------------------------------------------------------------------------------------------------
 
-void SurfaceImpl::Release() {
+void SurfaceImpl::Clear() {
 	textLayout->setContext(nullptr);
 	if (bitmapData) {
 		bitmapData.reset();
@@ -164,6 +165,12 @@ void SurfaceImpl::Release() {
 	bitmapHeight = 0;
 	x = 0;
 	y = 0;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void SurfaceImpl::Release() {
+	Clear();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -864,18 +871,6 @@ void SurfaceImpl::DrawTextTransparent(PRectangle rc, Font &font_, XYPOSITION yba
 	textLayout->draw(rc.left, ybase);
 }
 
-static size_t utf8LengthFromLead(unsigned char uch) {
-	if (uch >= (0x80 + 0x40 + 0x20 + 0x10)) {
-		return 4;
-	} else if (uch >= (0x80 + 0x40 + 0x20)) {
-		return 3;
-	} else if (uch >= (0x80)) {
-		return 2;
-	} else {
-		return 1;
-	}
-}
-
 //--------------------------------------------------------------------------------------------------
 
 void SurfaceImpl::MeasureWidths(Font &font_, const char *s, int len, XYPOSITION *positions) {
@@ -892,10 +887,10 @@ void SurfaceImpl::MeasureWidths(Font &font_, const char *s, int len, XYPOSITION 
 		const unsigned char *us = reinterpret_cast<const unsigned char *>(s);
 		int i=0;
 		while (ui<fit) {
-			size_t lenChar = utf8LengthFromLead(us[i]);
-			size_t codeUnits = (lenChar < 4) ? 1 : 2;
+			const unsigned int byteCount = UTF8BytesOfLead[us[i]];
+			const int codeUnits = UTF16LengthFromUTF8ByteCount(byteCount);
 			CGFloat xPosition = CTLineGetOffsetForStringIndex(mLine, ui+codeUnits, NULL);
-			for (unsigned int bytePos=0; (bytePos<lenChar) && (i<len); bytePos++) {
+			for (unsigned int bytePos=0; (bytePos<byteCount) && (i<len); bytePos++) {
 				positions[i++] = static_cast<XYPOSITION>(xPosition);
 			}
 			ui += codeUnits;

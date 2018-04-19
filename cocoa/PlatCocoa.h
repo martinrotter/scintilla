@@ -7,12 +7,12 @@
 #ifndef PLATCOCOA_H
 #define PLATCOCOA_H
 
-#include <sys/time.h>
-
 #include <cstdlib>
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+
+#include <sys/time.h>
 
 #include <Cocoa/Cocoa.h>
 
@@ -63,6 +63,9 @@ private:
 	static const int BITS_PER_COMPONENT = 8;
 	static const int BITS_PER_PIXEL = BITS_PER_COMPONENT * 4;
 	static const int BYTES_PER_PIXEL = BITS_PER_PIXEL / 8;
+
+	void Clear();
+
 public:
 	SurfaceImpl();
 	~SurfaceImpl() override;
