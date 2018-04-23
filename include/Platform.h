@@ -99,7 +99,7 @@ public:
 	XYPOSITION x;
 	XYPOSITION y;
 
-	explicit Point(XYPOSITION x_=0, XYPOSITION y_=0) : x(x_), y(y_) {
+	constexpr explicit Point(XYPOSITION x_=0, XYPOSITION y_=0) : x(x_), y(y_) {
 	}
 
 	static Point FromInts(int x_, int y_) {
@@ -217,15 +217,15 @@ public:
 		return co;
 	}
 
-	unsigned int GetRed() const {
+	unsigned char GetRed() const {
 		return co & 0xff;
 	}
 
-	unsigned int GetGreen() const {
+	unsigned char GetGreen() const {
 		return (co >> 8) & 0xff;
 	}
 
-	unsigned int GetBlue() const {
+	unsigned char GetBlue() const {
 		return (co >> 16) & 0xff;
 	}
 };
@@ -337,11 +337,6 @@ public:
 	virtual void SetUnicodeMode(bool unicodeMode_)=0;
 	virtual void SetDBCSMode(int codePage)=0;
 };
-
-/**
- * A simple callback action passing one piece of untyped user data.
- */
-typedef void (*CallBackAction)(void*);
 
 /**
  * Class to hide the details of window manipulation.
