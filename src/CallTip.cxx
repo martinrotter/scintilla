@@ -5,6 +5,7 @@
 // Copyright 1998-2001 by Neil Hodgson <neilh@scintilla.org>
 // The License.txt file describes the conditions under which this software may be distributed.
 
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
@@ -12,6 +13,8 @@
 
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <vector>
 #include <algorithm>
 #include <memory>
 
@@ -19,8 +22,8 @@
 
 #include "Scintilla.h"
 
-#include "StringCopy.h"
 #include "Position.h"
+#include "IntegerRectangle.h"
 #include "CallTip.h"
 
 using namespace Scintilla;
@@ -132,14 +135,14 @@ void CallTip::DrawChunk(Surface *surface, int &x, const char *s,
     						Point::FromInts(centreX + halfWidth, centreY + quarterWidth),
     						Point::FromInts(centreX, centreY - halfWidth + quarterWidth),
 						};
-						surface->Polygon(pts, ELEMENTS(pts), colourBG, colourBG);
+						surface->Polygon(pts, std::size(pts), colourBG, colourBG);
 					} else {            // Down arrow
 						Point pts[] = {
     						Point::FromInts(centreX - halfWidth, centreY - quarterWidth),
     						Point::FromInts(centreX + halfWidth, centreY - quarterWidth),
     						Point::FromInts(centreX, centreY + halfWidth - quarterWidth),
 						};
-						surface->Polygon(pts, ELEMENTS(pts), colourBG, colourBG);
+						surface->Polygon(pts, std::size(pts), colourBG, colourBG);
 					}
 				}
 				offsetMain = xEnd;
@@ -151,13 +154,13 @@ void CallTip::DrawChunk(Surface *surface, int &x, const char *s,
 			} else if (IsTabCharacter(s[startSeg])) {
 				xEnd = NextTabPos(x);
 			} else {
-				xEnd = x + static_cast<int>(lround(surface->WidthText(font, s + startSeg, endSeg - startSeg)));
+				std::string_view segText(s + startSeg, endSeg - startSeg);
+				xEnd = x + static_cast<int>(lround(surface->WidthText(font, segText)));
 				if (draw) {
 					rcClient.left = static_cast<XYPOSITION>(x);
 					rcClient.right = static_cast<XYPOSITION>(xEnd);
 					surface->DrawTextTransparent(rcClient, font, static_cast<XYPOSITION>(ytext),
-										s+startSeg, endSeg - startSeg,
-					                             highlight ? colourSel : colourUnSel);
+										segText, highlight ? colourSel : colourUnSel);
 				}
 			}
 			x = xEnd;
@@ -233,13 +236,14 @@ void CallTip::PaintCT(Surface *surfaceWindow) {
 #ifndef __APPLE__
 	// OSX doesn't put borders on "help tags"
 	// Draw a raised border around the edges of the window
-	surfaceWindow->MoveTo(0, static_cast<int>(rcClientSize.bottom) - 1);
+	const IntegerRectangle ircClientSize(rcClientSize);
+	surfaceWindow->MoveTo(0, ircClientSize.bottom - 1);
 	surfaceWindow->PenColour(colourShade);
-	surfaceWindow->LineTo(static_cast<int>(rcClientSize.right) - 1, static_cast<int>(rcClientSize.bottom) - 1);
-	surfaceWindow->LineTo(static_cast<int>(rcClientSize.right) - 1, 0);
+	surfaceWindow->LineTo(ircClientSize.right - 1, ircClientSize.bottom - 1);
+	surfaceWindow->LineTo(ircClientSize.right - 1, 0);
 	surfaceWindow->PenColour(colourLight);
 	surfaceWindow->LineTo(0, 0);
-	surfaceWindow->LineTo(0, static_cast<int>(rcClientSize.bottom) - 1);
+	surfaceWindow->LineTo(0, ircClientSize.bottom - 1);
 #endif
 }
 

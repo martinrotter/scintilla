@@ -5,6 +5,7 @@
 // Copyright 1998-2003 by Neil Hodgson <neilh@scintilla.org>
 // The License.txt file describes the conditions under which this software may be distributed.
 
+#include <cstddef>
 #include <cstdlib>
 #include <cassert>
 #include <cstring>
@@ -12,6 +13,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <algorithm>
 #include <memory>

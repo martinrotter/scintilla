@@ -14,6 +14,9 @@
  * This file is dual licensed under LGPL v2.1 and the Scintilla license (http://www.scintilla.org/License.txt).
  */
 
+#include <string_view>
+#include <vector>
+
 #import <Cocoa/Cocoa.h>
 #if MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_5
 #import <QuartzCore/CAGradientLayer.h>
@@ -555,6 +558,10 @@ public:
 			return 1;
 		} else {
 			CFStringRef cfsVal = CFStringFromString(mixed, lenMixed, encoding);
+			if (!cfsVal) {
+				folded[0] = '\0';
+				return 1;
+			}
 
 			NSString *sMapped = [(__bridge NSString *)cfsVal stringByFoldingWithOptions: NSCaseInsensitiveSearch
 											     locale: [NSLocale currentLocale]];
@@ -631,6 +638,9 @@ std::string ScintillaCocoa::CaseMapString(const std::string &s, int caseMapping)
 				    vs.styles[STYLE_DEFAULT].characterSet);
 
 	CFStringRef cfsVal = CFStringFromString(s.c_str(), s.length(), encoding);
+	if (!cfsVal) {
+		return s;
+	}
 
 	NSString *sMapped;
 	switch (caseMapping) {
@@ -832,12 +842,19 @@ sptr_t ScintillaCocoa::WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lPar
 		case SCI_GETDIRECTPOINTER:
 			return reinterpret_cast<sptr_t>(this);
 
+		case SCI_SETBIDIRECTIONAL:
+			bidirectional = static_cast<EditModel::Bidirectional>(wParam);
+			// Invalidate all cached information including layout.
+			DropGraphics(true);
+			InvalidateStyleRedraw();
+			return 0;
+
 		case SCI_TARGETASUTF8:
-			return TargetAsUTF8(reinterpret_cast<char *>(lParam));
+			return TargetAsUTF8(CharPtrFromSPtr(lParam));
 
 		case SCI_ENCODEDFROMUTF8:
-			return EncodedFromUTF8(reinterpret_cast<char *>(wParam),
-					       reinterpret_cast<char *>(lParam));
+			return EncodedFromUTF8(ConstCharPtrFromUPtr(wParam),
+					       CharPtrFromSPtr(lParam));
 
 		case SCI_SETIMEINTERACTION:
 			// Only inline IME supported on Cocoa
@@ -887,7 +904,7 @@ sptr_t ScintillaCocoa::WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lPar
 	} catch (...) {
 		errorStatus = SC_STATUS_FAILURE;
 	}
-	return 0l;
+	return 0;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1114,7 +1131,7 @@ void ScintillaCocoa::CreateCallTipWindow(PRectangle rc) {
 	if (!ct.wCallTip.Created()) {
 		NSRect ctRect = NSMakeRect(rc.top, rc.bottom, rc.Width(), rc.Height());
 		NSWindow *callTip = [[NSWindow alloc] initWithContentRect: ctRect
-								styleMask: NSBorderlessWindowMask
+								styleMask: NSWindowStyleMaskBorderless
 								  backing: NSBackingStoreBuffered
 								    defer: NO];
 		[callTip setLevel: NSFloatingWindowLevel];
@@ -1246,6 +1263,8 @@ void ScintillaCocoa::DragScroll() {
 				    selectedText.characterSet);
 
 	CFStringRef cfsVal = CFStringFromString(selectedText.Data(), selectedText.Length(), encoding);
+	if (!cfsVal)
+		return;
 
 	if ([type compare: NSPasteboardTypeString] == NSOrderedSame) {
 		[pasteboard setString: (__bridge NSString *)cfsVal forType: NSStringPboardType];
@@ -1399,7 +1418,7 @@ void ScintillaCocoa::StartDrag() {
 	NSImage *dragImage = [[NSImage alloc] initWithSize: selectionRectangle.size];
 	dragImage.backgroundColor = [NSColor clearColor];
 	[dragImage lockFocus];
-	[image drawAtPoint: NSZeroPoint fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 0.5];
+	[image drawAtPoint: NSZeroPoint fromRect: NSZeroRect operation: NSCompositingOperationSourceOver fraction: 0.5];
 	[dragImage unlockFocus];
 
 	NSPoint startPoint;
@@ -1515,6 +1534,8 @@ void ScintillaCocoa::SetPasteboardData(NSPasteboard *board, const SelectionText 
 				    selectedText.characterSet);
 
 	CFStringRef cfsVal = CFStringFromString(selectedText.Data(), selectedText.Length(), encoding);
+	if (!cfsVal)
+		return;
 
 	NSArray *pbTypes = selectedText.rectangular ?
 			   @[NSStringPboardType, ScintillaRecPboardType] :
@@ -1574,7 +1595,7 @@ bool ScintillaCocoa::GetPasteboardData(NSPasteboard *board, SelectionText *selec
 
 // Returns the target converted to UTF8.
 // Return the length in bytes.
-ptrdiff_t ScintillaCocoa::TargetAsUTF8(char *text) {
+Sci::Position ScintillaCocoa::TargetAsUTF8(char *text) const {
 	const Sci::Position targetLength = targetEnd - targetStart;
 	if (IsUnicodeMode()) {
 		if (text)
@@ -1585,6 +1606,9 @@ ptrdiff_t ScintillaCocoa::TargetAsUTF8(char *text) {
 						  vs.styles[STYLE_DEFAULT].characterSet);
 		const std::string s = RangeText(targetStart, targetEnd);
 		CFStringRef cfsVal = CFStringFromString(s.c_str(), s.length(), encoding);
+		if (!cfsVal) {
+			return 0;
+		}
 
 		const std::string tmputf = EncodedBytesString(cfsVal, kCFStringEncodingUTF8);
 
@@ -1675,7 +1699,7 @@ NSRect ScintillaCocoa::GetBounds() const {
 
 // Translates a UTF8 string into the document encoding.
 // Return the length of the result in bytes.
-ptrdiff_t ScintillaCocoa::EncodedFromUTF8(char *utf8, char *encoded) const {
+Sci::Position ScintillaCocoa::EncodedFromUTF8(const char *utf8, char *encoded) const {
 	const size_t inputLength = (lengthForEncode >= 0) ? lengthForEncode : strlen(utf8);
 	if (IsUnicodeMode()) {
 		if (encoded)
@@ -2070,17 +2094,17 @@ static inline UniChar KeyTranslate(UniChar unicodeChar, NSEventModifierFlags mod
 	case 27:
 		return SCK_ESCAPE;
 	case '+':
-		if (modifierFlags & NSNumericPadKeyMask)
+		if (modifierFlags & NSEventModifierFlagNumericPad)
 			return SCK_ADD;
 		else
 			return unicodeChar;
 	case '-':
-		if (modifierFlags & NSNumericPadKeyMask)
+		if (modifierFlags & NSEventModifierFlagNumericPad)
 			return SCK_SUBTRACT;
 		else
 			return unicodeChar;
 	case '/':
-		if (modifierFlags & NSNumericPadKeyMask)
+		if (modifierFlags & NSEventModifierFlagNumericPad)
 			return SCK_DIVIDE;
 		else
 			return unicodeChar;
@@ -2105,10 +2129,10 @@ static inline UniChar KeyTranslate(UniChar unicodeChar, NSEventModifierFlags mod
 static int TranslateModifierFlags(NSUInteger modifiers) {
 	// Signal Control as SCI_META
 	return
-		(((modifiers & NSShiftKeyMask) != 0) ? SCI_SHIFT : 0) |
-		(((modifiers & NSCommandKeyMask) != 0) ? SCI_CTRL : 0) |
-		(((modifiers & NSAlternateKeyMask) != 0) ? SCI_ALT : 0) |
-		(((modifiers & NSControlKeyMask) != 0) ? SCI_META : 0);
+		(((modifiers & NSEventModifierFlagShift) != 0) ? SCI_SHIFT : 0) |
+		(((modifiers & NSEventModifierFlagCommand) != 0) ? SCI_CTRL : 0) |
+		(((modifiers & NSEventModifierFlagOption) != 0) ? SCI_ALT : 0) |
+		(((modifiers & NSEventModifierFlagControl) != 0) ? SCI_META : 0);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -2267,6 +2291,20 @@ void ScintillaCocoa::SetDocPointer(Document *document) {
 //--------------------------------------------------------------------------------------------------
 
 /**
+ * Convert NSEvent timestamp NSTimeInterval into unsigned int milliseconds wanted by Editor methods.
+ */
+
+namespace {
+
+unsigned int TimeOfEvent(NSEvent *event) {
+	return static_cast<unsigned int>(event.timestamp * 1000);
+}
+
+}
+
+//--------------------------------------------------------------------------------------------------
+
+/**
  * Called by the owning view when the mouse pointer enters the control.
  */
 void ScintillaCocoa::MouseEntered(NSEvent *event) {
@@ -2276,7 +2314,7 @@ void ScintillaCocoa::MouseEntered(NSEvent *event) {
 		// Mouse location is given in screen coordinates and might also be outside of our bounds.
 		Point location = ConvertPoint(event.locationInWindow);
 		ButtonMoveWithModifiers(location,
-					(int)(event.timestamp * 1000),
+					TimeOfEvent(event),
 					TranslateModifierFlags(event.modifierFlags));
 	}
 }
@@ -2292,14 +2330,14 @@ void ScintillaCocoa::MouseExited(NSEvent * /* event */) {
 void ScintillaCocoa::MouseDown(NSEvent *event) {
 	Point location = ConvertPoint(event.locationInWindow);
 	ButtonDownWithModifiers(location,
-				(int)(event.timestamp * 1000),
+				TimeOfEvent(event),
 				TranslateModifierFlags(event.modifierFlags));
 }
 
 void ScintillaCocoa::RightMouseDown(NSEvent *event) {
 	Point location = ConvertPoint(event.locationInWindow);
 	RightButtonDownWithModifiers(location,
-				     (int)(event.timestamp * 1000),
+				     TimeOfEvent(event),
 				     TranslateModifierFlags(event.modifierFlags));
 }
 
@@ -2309,7 +2347,7 @@ void ScintillaCocoa::MouseMove(NSEvent *event) {
 	lastMouseEvent = event;
 
 	ButtonMoveWithModifiers(ConvertPoint(event.locationInWindow),
-				(int)(event.timestamp * 1000),
+				TimeOfEvent(event),
 				TranslateModifierFlags(event.modifierFlags));
 }
 
@@ -2317,22 +2355,22 @@ void ScintillaCocoa::MouseMove(NSEvent *event) {
 
 void ScintillaCocoa::MouseUp(NSEvent *event) {
 	ButtonUpWithModifiers(ConvertPoint(event.locationInWindow),
-		 (int)(event.timestamp * 1000),
+		 TimeOfEvent(event),
 		 TranslateModifierFlags(event.modifierFlags));
 }
 
 //--------------------------------------------------------------------------------------------------
 
 void ScintillaCocoa::MouseWheel(NSEvent *event) {
-	bool command = (event.modifierFlags & NSCommandKeyMask) != 0;
+	bool command = (event.modifierFlags & NSEventModifierFlagCommand) != 0;
 	int dY = 0;
 
 	// In order to make scrolling with larger offset smoother we scroll less lines the larger the
 	// delta value is.
 	if (event.deltaY < 0)
-		dY = -(int) sqrt(-10.0 * event.deltaY);
+		dY = -static_cast<int>(sqrt(-10.0 * event.deltaY));
 	else
-		dY = (int) sqrt(10.0 * event.deltaY);
+		dY = static_cast<int>(sqrt(10.0 * event.deltaY));
 
 	if (command) {
 		// Zoom! We play with the font sizes in the styles.

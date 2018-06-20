@@ -36,11 +36,13 @@ enum DrawPhase {
 bool ValidStyledText(const ViewStyle &vs, size_t styleOffset, const StyledText &st);
 int WidestLineWidth(Surface *surface, const ViewStyle &vs, int styleOffset, const StyledText &st);
 void DrawTextNoClipPhase(Surface *surface, PRectangle rc, const Style &style, XYPOSITION ybase,
-	const char *s, int len, DrawPhase phase);
+	std::string_view text, DrawPhase phase);
 void DrawStyledText(Surface *surface, const ViewStyle &vs, int styleOffset, PRectangle rcText,
 	const StyledText &st, size_t start, size_t length, DrawPhase phase);
 
 typedef void (*DrawTabArrowFn)(Surface *surface, PRectangle rcTab, int ymid);
+
+class LineTabstops;
 
 /**
 * EditView draws the main text area.
@@ -48,7 +50,7 @@ typedef void (*DrawTabArrowFn)(Surface *surface, PRectangle rcTab, int ymid);
 class EditView {
 public:
 	PrintParameters printParameters;
-	std::unique_ptr<PerLine> ldTabstops;
+	std::unique_ptr<LineTabstops> ldTabstops;
 	int tabWidthMinimumPixels;
 
 	bool hideSelection;
@@ -90,7 +92,9 @@ public:
 	EditView();
 	// Deleted so EditView objects can not be copied.
 	EditView(const EditView &) = delete;
+	EditView(EditView &&) = delete;
 	void operator=(const EditView &) = delete;
+	void operator=(EditView &&) = delete;
 	virtual ~EditView();
 
 	bool SetTwoPhaseDraw(bool twoPhaseDraw);
@@ -112,11 +116,13 @@ public:
 	void LayoutLine(const EditModel &model, Sci::Line line, Surface *surface, const ViewStyle &vstyle,
 		LineLayout *ll, int width = LineLayout::wrapWidthInfinite);
 
+	static void UpdateBidiData(const EditModel &model, const ViewStyle &vstyle, LineLayout *ll);
+
 	Point LocationFromPosition(Surface *surface, const EditModel &model, SelectionPosition pos, Sci::Line topLine,
-				   const ViewStyle &vs, PointEnd pe);
+		const ViewStyle &vs, PointEnd pe, const PRectangle rcClient);
 	Range RangeDisplayLine(Surface *surface, const EditModel &model, Sci::Line lineVisible, const ViewStyle &vs);
 	SelectionPosition SPositionFromLocation(Surface *surface, const EditModel &model, PointDocument pt, bool canReturnInvalid,
-		bool charPosition, bool virtualSpace, const ViewStyle &vs);
+		bool charPosition, bool virtualSpace, const ViewStyle &vs, const PRectangle rcClient);
 	SelectionPosition SPositionFromLineX(Surface *surface, const EditModel &model, Sci::Line lineDoc, int x, const ViewStyle &vs);
 	Sci::Line DisplayFromPosition(Surface *surface, const EditModel &model, Sci::Position pos, const ViewStyle &vs);
 	Sci::Position StartEndDisplayLine(Surface *surface, const EditModel &model, Sci::Position pos, bool start, const ViewStyle &vs);
@@ -156,17 +162,19 @@ class AutoLineLayout {
 	LineLayoutCache &llc;
 	LineLayout *ll;
 public:
-	AutoLineLayout(LineLayoutCache &llc_, LineLayout *ll_) : llc(llc_), ll(ll_) {}
-	explicit AutoLineLayout(const AutoLineLayout &) = delete;
+	AutoLineLayout(LineLayoutCache &llc_, LineLayout *ll_) noexcept : llc(llc_), ll(ll_) {}
+	AutoLineLayout(const AutoLineLayout &) = delete;
+	AutoLineLayout(AutoLineLayout &&) = delete;
 	AutoLineLayout &operator=(const AutoLineLayout &) = delete;
+	AutoLineLayout &operator=(AutoLineLayout &&) = delete;
 	~AutoLineLayout() {
 		llc.Dispose(ll);
-		ll = 0;
+		ll = nullptr;
 	}
-	LineLayout *operator->() const {
+	LineLayout *operator->() const noexcept {
 		return ll;
 	}
-	operator LineLayout *() const {
+	operator LineLayout *() const noexcept {
 		return ll;
 	}
 	void Set(LineLayout *ll_) {

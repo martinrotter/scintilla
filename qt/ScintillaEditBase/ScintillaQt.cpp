@@ -8,8 +8,8 @@
 // Additions Copyright (c) 2011 Archaeopteryx Software, Inc. d/b/a Wingware
 // ScintillaQt.cpp - Qt specific subclass of ScintillaBase
 
-#include "PlatQt.h"
 #include "ScintillaQt.h"
+#include "PlatQt.h"
 #ifdef SCI_LEXER
 #include "LexerModule.h"
 #include "ExternalLexer.h"
@@ -22,9 +22,9 @@
 #endif
 #include <QMimeData>
 #include <QMenu>
+#include <QTextCodec>
 #include <QScrollBar>
 #include <QTimer>
-#include <QTextCodec>
 
 using namespace Scintilla;
 
@@ -344,7 +344,7 @@ void ScintillaQt::PasteFromMode(QClipboard::Mode clipboardMode_)
 
 	UndoGroup ug(pdoc);
 	ClearSelection(multiPasteMode == SC_MULTIPASTE_EACH);
-	InsertPasteShape(selText.Data(), static_cast<int>(selText.Length()),
+	InsertPasteShape(selText.Data(), selText.Length(),
 		selText.rectangular ? pasteRectangular : pasteStream);
 	EnsureCaretVisible();
 }
@@ -676,7 +676,7 @@ sptr_t ScintillaQt::WndProc(unsigned int iMessage, uptr_t wParam, sptr_t lParam)
 	} catch (...) {
 		errorStatus = SC_STATUS_FAILURE;
 	}
-	return 0l;
+	return 0;
 }
 
 sptr_t ScintillaQt::DefWndProc(unsigned int, uptr_t, sptr_t)

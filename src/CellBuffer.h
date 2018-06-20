@@ -43,10 +43,9 @@ public:
 	Action &operator=(const Action &other) = delete;
 	Action &operator=(const Action &&other) = delete;
 	// Move constructor allows vector to be resized without reallocating.
-	// Could use =default but MSVC 2013 warns.
-	Action(Action &&other);
+	Action(Action &&other) noexcept = default;
 	~Action();
-	void Create(actionType at_, Sci::Position position_=0, const char *data_=0, Sci::Position lenData_=0, bool mayCoalesce_=true);
+	void Create(actionType at_, Sci::Position position_=0, const char *data_=nullptr, Sci::Position lenData_=0, bool mayCoalesce_=true);
 	void Clear();
 };
 
@@ -67,7 +66,9 @@ public:
 	UndoHistory();
 	// Deleted so UndoHistory objects can not be copied.
 	UndoHistory(const UndoHistory &) = delete;
+	UndoHistory(UndoHistory &&) = delete;
 	void operator=(const UndoHistory &) = delete;
+	void operator=(UndoHistory &&) = delete;
 	~UndoHistory();
 
 	const char *AppendAction(actionType at, Sci::Position position, const char *data, Sci::Position lengthData, bool &startSequence, bool mayCoalesce=true);
@@ -85,7 +86,7 @@ public:
 	// Tentative actions are used for input composition so that it can be undone cleanly
 	void TentativeStart();
 	void TentativeCommit();
-	bool TentativeActive() const { return tentativePoint >= 0; }
+	bool TentativeActive() const noexcept { return tentativePoint >= 0; }
 	int TentativeSteps();
 
 	/// To perform an undo, StartUndo is called to retrieve the number of steps, then UndoStep is
