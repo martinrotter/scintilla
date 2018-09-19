@@ -487,9 +487,10 @@ public:
 	bool selectionIsRectangle() const;
 	void setZoom(sptr_t zoomInPoints);
 	sptr_t zoom() const;
-	sptr_t createDocument(sptr_t bytes, sptr_t documentOption);
+	sptr_t createDocument(sptr_t bytes, sptr_t documentOptions);
 	void addRefDocument(sptr_t doc);
 	void releaseDocument(sptr_t doc);
+	sptr_t documentOptions() const;
 	sptr_t modEventMask() const;
 	void setFocus(bool focus);
 	bool focus() const;
@@ -706,7 +707,7 @@ public:
 	void scrollToEnd();
 	void setTechnology(sptr_t technology);
 	sptr_t technology() const;
-	sptr_t createLoader(sptr_t bytes, sptr_t documentOption);
+	sptr_t createLoader(sptr_t bytes, sptr_t documentOptions);
 	void findIndicatorShow(sptr_t start, sptr_t end);
 	void findIndicatorFlash(sptr_t start, sptr_t end);
 	void findIndicatorHide();
