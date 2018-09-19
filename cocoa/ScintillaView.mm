@@ -9,6 +9,9 @@
  * This file is dual licensed under LGPL v2.1 and the Scintilla license (http://www.scintilla.org/License.txt).
  */
 
+#include <string_view>
+#include <vector>
+
 #import "Platform.h"
 #import "ScintillaView.h"
 #import "ScintillaCocoa.h"
@@ -600,7 +603,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
 		NSRange posRangeCurrent = mOwner.backend->PositionsFromCharacters(NSMakeRange(replacementRange.location, 0));
 		// Note: Scintilla internally works almost always with bytes instead chars, so we need to take
 		//       this into account when determining selection ranges and such.
-		int lengthInserted = mOwner.backend->InsertText(newText);
+		ptrdiff_t lengthInserted = mOwner.backend->InsertText(newText);
 		posRangeCurrent.length = lengthInserted;
 		mMarkedTextRange = mOwner.backend->CharactersFromPositions(posRangeCurrent);
 		// Mark the just inserted text. Keep the marked range for later reset.
@@ -703,7 +706,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
  */
 - (void) scrollWheel: (NSEvent *) theEvent {
 #ifdef SCROLL_WHEEL_MAGNIFICATION
-	if (([theEvent modifierFlags] & NSCommandKeyMask) != 0) {
+	if (([theEvent modifierFlags] & NSEventModifierFlagCommand) != 0) {
 		mOwner.backend->MouseWheel(theEvent);
 		return;
 	}
@@ -941,7 +944,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
  */
 - (id) accessibilityValue {
 	const sptr_t length = [mOwner message: SCI_GETLENGTH];
-	return mOwner.backend->RangeTextAsString(NSMakeRange(0, static_cast<int>(length)));
+	return mOwner.backend->RangeTextAsString(NSMakeRange(0, length));
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -950,7 +953,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
  * NSAccessibility : Line of the caret.
  */
 - (NSInteger) accessibilityInsertionPointLineNumber {
-	const int caret = static_cast<int>([mOwner message: SCI_GETCURRENTPOS]);
+	const Sci::Position caret = [mOwner message: SCI_GETCURRENTPOS];
 	const NSRange rangeCharactersCaret = mOwner.backend->CharactersFromPositions(NSMakeRange(caret, 0));
 	return mOwner.backend->VisibleLineForIndex(rangeCharactersCaret.location);
 }
@@ -1126,7 +1129,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
 	rect.size.height = 1.0;
 	NSRect rectInWindow = [self.superview.superview convertRect: rect toView: nil];
 	NSPoint pt = rectInWindow.origin;
-	NSEvent *event = [NSEvent mouseEventWithType: NSRightMouseDown
+	NSEvent *event = [NSEvent mouseEventWithType: NSEventTypeRightMouseDown
 					    location: pt
 				       modifierFlags: 0
 					   timestamp: 0
@@ -1192,7 +1195,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
 
 		path = [bundle pathForResource: @"mac_cursor_flipped" ofType: @"tiff" inDirectory: nil];
 		image = [[NSImage alloc] initWithContentsOfFile: path];
-		reverseArrowCursor = [[NSCursor alloc] initWithImage: image hotSpot: NSMakePoint(12, 2)];
+		reverseArrowCursor = [[NSCursor alloc] initWithImage: image hotSpot: NSMakePoint(15, 2)];
 	}
 }
 
@@ -1477,7 +1480,7 @@ static NSCursor *cursorFromEnum(Window::Cursor cursor) {
  * Used to position and size the parts of the editor (content, scrollers, info bar).
  */
 - (void) positionSubViews {
-	CGFloat scrollerWidth = [NSScroller scrollerWidthForControlSize: NSRegularControlSize
+	CGFloat scrollerWidth = [NSScroller scrollerWidthForControlSize: NSControlSizeRegular
 							  scrollerStyle: NSScrollerStyleLegacy];
 
 	NSSize size = self.frame.size;

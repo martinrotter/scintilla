@@ -40,10 +40,6 @@ CXXFLAGS=$(CXXFLAGS) $(NOLOGO)
 LDFLAGS=$(LDFLAGS) $(NOLOGO)
 !ENDIF
 
-!IFDEF ENABLE_BIDIRECTIONAL
-CXXFLAGS=$(CXXFLAGS) -DENABLE_BIDIRECTIONAL
-!ENDIF
-
 !IFDEF NO_CXX11_REGEX
 CXXFLAGS=$(CXXFLAGS) -DNO_CXX11_REGEX
 !ENDIF
@@ -193,6 +189,7 @@ LEXOBJS=\
 	$(DIR_O)\LexRegistry.obj \
 	$(DIR_O)\LexRuby.obj \
 	$(DIR_O)\LexRust.obj \
+	$(DIR_O)\LexSAS.obj \
 	$(DIR_O)\LexScriptol.obj \
 	$(DIR_O)\LexSmalltalk.obj \
 	$(DIR_O)\LexSML.obj \
@@ -200,6 +197,7 @@ LEXOBJS=\
 	$(DIR_O)\LexSpecman.obj \
 	$(DIR_O)\LexSpice.obj \
 	$(DIR_O)\LexSQL.obj \
+	$(DIR_O)\LexStata.obj \
 	$(DIR_O)\LexSTTXT.obj \
 	$(DIR_O)\LexTACL.obj \
 	$(DIR_O)\LexTADS3.obj \
@@ -306,6 +304,7 @@ $(DIR_O)\CallTip.obj: \
 	../include/Platform.h \
 	../include/Scintilla.h \
 	../include/Sci_Position.h \
+	../src/IntegerRectangle.h \
 	../lexlib/StringCopy.h \
 	../src/Position.h \
 	../src/CallTip.h
@@ -338,7 +337,6 @@ $(DIR_O)\CellBuffer.obj: \
 	../src/UniConversion.h
 $(DIR_O)\CharacterCategory.obj: \
 	../lexlib/CharacterCategory.cxx \
-	../lexlib/StringCopy.h \
 	../lexlib/CharacterCategory.h
 $(DIR_O)\CharacterSet.obj: \
 	../lexlib/CharacterSet.cxx \
@@ -401,7 +399,8 @@ $(DIR_O)\Document.obj: \
 	../src/CaseFolder.h \
 	../src/Document.h \
 	../src/RESearch.h \
-	../src/UniConversion.h
+	../src/UniConversion.h \
+	../src/ElapsedPeriod.h
 $(DIR_O)\EditModel.obj: \
 	../src/EditModel.cxx \
 	../include/Platform.h \
@@ -438,6 +437,7 @@ $(DIR_O)\Editor.obj: \
 	../include/ILexer.h \
 	../include/Scintilla.h \
 	../lexlib/StringCopy.h \
+	../lexlib/CharacterSet.h \
 	../src/Position.h \
 	../src/UniqueString.h \
 	../src/SplitVector.h \
@@ -472,6 +472,7 @@ $(DIR_O)\EditView.obj: \
 	../lexlib/StringCopy.h \
 	../lexlib/CharacterSet.h \
 	../src/Position.h \
+	../src/IntegerRectangle.h \
 	../src/UniqueString.h \
 	../src/SplitVector.h \
 	../src/Partitioning.h \
@@ -493,7 +494,8 @@ $(DIR_O)\EditView.obj: \
 	../src/PositionCache.h \
 	../src/EditModel.h \
 	../src/MarginView.h \
-	../src/EditView.h
+	../src/EditView.h \
+	../src/ElapsedPeriod.h
 $(DIR_O)\ExternalLexer.obj: \
 	../src/ExternalLexer.cxx \
 	../include/Platform.h \
@@ -513,6 +515,7 @@ $(DIR_O)\Indicator.obj: \
 	../include/Platform.h \
 	../include/Scintilla.h \
 	../include/Sci_Position.h \
+	../src/IntegerRectangle.h \
 	../src/Indicator.h \
 	../src/XPM.h
 $(DIR_O)\KeyMap.obj: \
@@ -697,6 +700,8 @@ $(DIR_O)\LexRuby.obj: ..\lexers\LexRuby.cxx $(LEX_HEADERS)
 
 $(DIR_O)\LexRust.obj: ..\lexers\LexRust.cxx $(LEX_HEADERS)
 
+$(DIR_O)\LexSAS.obj: ..\lexers\LexSAS.cxx $(LEX_HEADERS)
+
 $(DIR_O)\LexScriptol.obj: ..\lexers\LexScriptol.cxx $(LEX_HEADERS)
 
 $(DIR_O)\LexSmalltalk.obj: ..\lexers\LexSmalltalk.cxx $(LEX_HEADERS)
@@ -710,6 +715,8 @@ $(DIR_O)\LexSpecman.obj: ..\lexers\LexSpecman.cxx $(LEX_HEADERS)
 $(DIR_O)\LexSpice.obj: ..\lexers\LexSpice.cxx $(LEX_HEADERS)
 
 $(DIR_O)\LexSQL.obj: ..\lexers\LexSQL.cxx $(LEX_HEADERS)
+
+$(DIR_O)\LexStata.obj: ..\lexers\LexStata.cxx $(LEX_HEADERS)
 
 $(DIR_O)\LexSTTXT.obj: ..\lexers\LexSTTXT.cxx $(LEX_HEADERS)
 
@@ -797,6 +804,7 @@ $(DIR_O)\LineMarker.obj: \
 	../include/Scintilla.h \
 	../include/Sci_Position.h \
 	../lexlib/StringCopy.h \
+	../src/IntegerRectangle.h \
 	../src/XPM.h \
 	../src/LineMarker.h
 $(DIR_O)\MarginView.obj: \
@@ -808,6 +816,7 @@ $(DIR_O)\MarginView.obj: \
 	../include/Scintilla.h \
 	../lexlib/StringCopy.h \
 	../src/Position.h \
+	../src/IntegerRectangle.h \
 	../src/UniqueString.h \
 	../src/SplitVector.h \
 	../src/Partitioning.h \
@@ -846,7 +855,8 @@ $(DIR_O)\PlatWin.obj: \
 	../src/XPM.h \
 	../src/UniConversion.h \
 	../src/DBCS.h \
-	../src/FontQuality.h
+	../src/FontQuality.h \
+	PlatWin.h
 $(DIR_O)\PositionCache.obj: \
 	../src/PositionCache.cxx \
 	../include/Platform.h \
@@ -957,7 +967,10 @@ $(DIR_O)\ScintillaBaseL.obj: \
 	../src/AutoComplete.h \
 	../src/ScintillaBase.h
 $(DIR_O)\ScintillaDLL.obj: \
-	ScintillaDLL.cxx
+	ScintillaDLL.cxx \
+	../include/Scintilla.h \
+	../include/Sci_Position.h \
+	ScintillaWin.h
 $(DIR_O)\ScintillaWin.obj: \
 	ScintillaWin.cxx \
 	../include/Platform.h \
@@ -991,10 +1004,12 @@ $(DIR_O)\ScintillaWin.obj: \
 	../src/MarginView.h \
 	../src/EditView.h \
 	../src/Editor.h \
+	../src/ElapsedPeriod.h \
 	../src/AutoComplete.h \
 	../src/ScintillaBase.h \
 	PlatWin.h \
-	HanjaDic.h
+	HanjaDic.h \
+	ScintillaWin.h
 $(DIR_O)\ScintillaWinL.obj: \
 	ScintillaWin.cxx \
 	../include/Platform.h \
@@ -1028,10 +1043,12 @@ $(DIR_O)\ScintillaWinL.obj: \
 	../src/MarginView.h \
 	../src/EditView.h \
 	../src/Editor.h \
+	../src/ElapsedPeriod.h \
 	../src/AutoComplete.h \
 	../src/ScintillaBase.h \
 	PlatWin.h \
-	HanjaDic.h
+	HanjaDic.h \
+	ScintillaWin.h
 $(DIR_O)\Selection.obj: \
 	../src/Selection.cxx \
 	../include/Platform.h \

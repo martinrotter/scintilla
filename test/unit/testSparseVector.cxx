@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 #include <algorithm>
 #include <memory>
@@ -233,4 +234,20 @@ TEST_CASE("SparseTextString") {
 		REQUIRE("" == st.ValueAt(2));
 		st.Check();
 	}
+
+	SECTION("SetAndMoveString") {
+		st.InsertSpace(0, 2);
+		REQUIRE(2u == st.Length());
+		std::string s24("24");
+		st.SetValueAt(0, s24);
+		REQUIRE("24" == s24);	// Not moved from
+		REQUIRE("" == st.ValueAt(-1));
+		REQUIRE("24" == st.ValueAt(0));
+		REQUIRE("" == st.ValueAt(1));
+		std::string s25("25");
+		st.SetValueAt(1, std::move(s25));
+		REQUIRE("" == s25);	// moved from
+		REQUIRE("25" == st.ValueAt(1));
+	}
+
 }

@@ -8,6 +8,8 @@
 // Additions Copyright (c) 2011 Archaeopteryx Software, Inc. d/b/a Wingware
 // Scintilla platform layer for Qt
 
+#include <cstdio>
+
 #include "PlatQt.h"
 #include "Scintilla.h"
 #include "UniConversion.h"
@@ -35,8 +37,6 @@
 #include <QTextLayout>
 #include <QTextLine>
 #include <QLibrary>
-#include <QElapsedTimer>
-#include <cstdio>
 
 namespace Scintilla {
 
@@ -93,6 +93,10 @@ const char *CharacterSetID(int characterSet)
 	}
 }
 
+QString UnicodeFromText(QTextCodec *codec, std::string_view text) {
+	return codec->toUnicode(text.data(), static_cast<int>(text.length()));
+}
+
 class FontAndCharacterSet {
 public:
 	int characterSet;
@@ -102,10 +106,9 @@ public:
 	}
 	~FontAndCharacterSet() {
 		delete pfont;
-		pfont = 0;
+		pfont = nullptr;
 	}
 };
-
 static int FontCharacterSet(Font &f)
 {
 	return reinterpret_cast<FontAndCharacterSet *>(f.GetID())->characterSet;
@@ -115,15 +118,12 @@ static QFont *FontPointer(Font &f)
 {
 	return reinterpret_cast<FontAndCharacterSet *>(f.GetID())->pfont;
 }
-
-Font::Font() : fid(0) {}
-
+Font::Font() noexcept : fid(nullptr) {}
 Font::~Font()
 {
 	delete reinterpret_cast<FontAndCharacterSet *>(fid);
-	fid = 0;
+	fid = nullptr;
 }
-
 static QFont::StyleStrategy ChooseStrategy(int eff)
 {
 	switch (eff) {
@@ -153,16 +153,12 @@ void Font::Release()
 {
 	if (fid)
 		delete reinterpret_cast<FontAndCharacterSet *>(fid);
-
-	fid = 0;
+	fid = nullptr;
 }
-
-
 SurfaceImpl::SurfaceImpl()
-: device(0), painter(0), deviceOwned(false), painterOwned(false), x(0), y(0),
-	  unicodeMode(false), codePage(0), codecName(0), codec(0)
+: device(nullptr), painter(nullptr), deviceOwned(false), painterOwned(false), x(0), y(0),
+	  unicodeMode(false), codePage(0), codecName(nullptr), codec(nullptr)
 {}
-
 SurfaceImpl::~SurfaceImpl()
 {
 	Clear();
@@ -177,9 +173,8 @@ void SurfaceImpl::Clear()
 	if (deviceOwned && device) {
 		delete device;
 	}
-
-	device = 0;
-	painter = 0;
+	device = nullptr;
+	painter = nullptr;
 	deviceOwned = false;
 	painterOwned = false;
 }
@@ -279,7 +274,7 @@ void SurfaceImpl::LineTo(int x_, int y_)
 }
 
 void SurfaceImpl::Polygon(Point *pts,
-                          int npts,
+			  size_t npts,
                           ColourDesired fore,
                           ColourDesired back)
 {
@@ -287,11 +282,11 @@ void SurfaceImpl::Polygon(Point *pts,
 	BrushColour(back);
 
 	std::vector<QPoint> qpts(npts);
-	for (int i = 0; i < npts; i++) {
+	for (size_t i = 0; i < npts; i++) {
 		qpts[i] = QPoint(pts[i].x, pts[i].y);
 	}
 
-	GetPainter()->drawPolygon(&qpts[0], npts);
+	GetPainter()->drawPolygon(&qpts[0], static_cast<int>(npts));
 }
 
 void SurfaceImpl::RectangleDraw(PRectangle rc,
@@ -359,6 +354,26 @@ void SurfaceImpl::AlphaRectangle(PRectangle rc,
 	GetPainter()->drawRoundedRect(rect, radius, radius);
 }
 
+void SurfaceImpl::GradientRectangle(PRectangle rc, const std::vector<ColourStop> &stops, GradientOptions options) {
+	QRectF rect = QRectFFromPRect(rc);
+	QLinearGradient linearGradient;
+	switch (options) {
+	case GradientOptions::leftToRight:
+		linearGradient = QLinearGradient(rc.left, rc.top, rc.right, rc.top);
+		break;
+	case GradientOptions::topToBottom:
+	default:
+		linearGradient = QLinearGradient(rc.left, rc.top, rc.left, rc.bottom);
+		break;
+	}
+	linearGradient.setSpread(QGradient::RepeatSpread);
+	for (const ColourStop &stop : stops) {
+		linearGradient.setColorAt(stop.position, QColorFromColourAlpha(stop.colour));
+	}
+	QBrush brush = QBrush(linearGradient);
+	GetPainter()->fillRect(rect, brush);
+}
+
 static std::vector<unsigned char> ImageByteSwapped(int width, int height, const unsigned char *pixelsImage)
 {
 	// Input is RGBA, but Format_ARGB32 is BGRA, so swap the red bytes and blue bytes
@@ -394,11 +409,15 @@ void SurfaceImpl::Copy(PRectangle rc, Point from, Surface &surfaceSource)
 	GetPainter()->drawPixmap(rc.left, rc.top, *pixmap, from.x, from.y, -1, -1);
 }
 
+std::unique_ptr<IScreenLineLayout> SurfaceImpl::Layout(const IScreenLine *)
+{
+	return {};
+}
+
 void SurfaceImpl::DrawTextNoClip(PRectangle rc,
                                  Font &font,
                                  XYPOSITION ybase,
-                                 const char *s,
-                                 int len,
+				 std::string_view text,
                                  ColourDesired fore,
                                  ColourDesired back)
 {
@@ -407,35 +426,33 @@ void SurfaceImpl::DrawTextNoClip(PRectangle rc,
 
 	GetPainter()->setBackground(QColorFromCA(back));
 	GetPainter()->setBackgroundMode(Qt::OpaqueMode);
-	QString su = codec->toUnicode(s, len);
+	QString su = UnicodeFromText(codec, text);
 	GetPainter()->drawText(QPointF(rc.left, ybase), su);
 }
 
 void SurfaceImpl::DrawTextClipped(PRectangle rc,
                                   Font &font,
                                   XYPOSITION ybase,
-                                  const char *s,
-                                  int len,
+				  std::string_view text,
                                   ColourDesired fore,
                                   ColourDesired back)
 {
 	SetClip(rc);
-	DrawTextNoClip(rc, font, ybase, s, len, fore, back);
+	DrawTextNoClip(rc, font, ybase, text, fore, back);
 	GetPainter()->setClipping(false);
 }
 
 void SurfaceImpl::DrawTextTransparent(PRectangle rc,
                                       Font &font,
                                       XYPOSITION ybase,
-                                      const char *s,
-                                      int len,
+				      std::string_view text,
         ColourDesired fore)
 {
 	SetFont(font);
 	PenColour(fore);
 
 	GetPainter()->setBackgroundMode(Qt::TransparentMode);
-	QString su = codec->toUnicode(s, len);
+	QString su = UnicodeFromText(codec, text);
 	GetPainter()->drawText(QPointF(rc.left, ybase), su);
 }
 
@@ -445,14 +462,13 @@ void SurfaceImpl::SetClip(PRectangle rc)
 }
 
 void SurfaceImpl::MeasureWidths(Font &font,
-                                const char *s,
-                                int len,
+				std::string_view text,
                                 XYPOSITION *positions)
 {
 	if (!font.GetID())
 		return;
 	SetCodec(font);
-	QString su = codec->toUnicode(s, len);
+	QString su = UnicodeFromText(codec, text);
 	QTextLayout tlay(su, *FontPointer(font), GetPaintDevice());
 	tlay.beginLayout();
 	QTextLine tl = tlay.createLine();
@@ -460,13 +476,13 @@ void SurfaceImpl::MeasureWidths(Font &font,
 	if (unicodeMode) {
 		int fit = su.size();
 		int ui=0;
-		const unsigned char *us = reinterpret_cast<const unsigned char *>(s);
-		int i=0;
+		size_t i=0;
 		while (ui<fit) {
-			const unsigned int byteCount = UTF8BytesOfLead[us[i]];
+			const unsigned char uch = text[i];
+			const unsigned int byteCount = UTF8BytesOfLead[uch];
 			const int codeUnits = UTF16LengthFromUTF8ByteCount(byteCount);
 			qreal xPosition = tl.cursorToX(ui+codeUnits);
-			for (unsigned int bytePos=0; (bytePos<byteCount) && (i<len); bytePos++) {
+			for (size_t bytePos=0; (bytePos<byteCount) && (i<text.length()); bytePos++) {
 				positions[i++] = xPosition;
 			}
 			ui += codeUnits;
@@ -474,40 +490,34 @@ void SurfaceImpl::MeasureWidths(Font &font,
 		XYPOSITION lastPos = 0;
 		if (i > 0)
 			lastPos = positions[i-1];
-		while (i<len) {
+		while (i<text.length()) {
 			positions[i++] = lastPos;
 		}
 	} else if (codePage) {
 		// DBCS
 		int ui = 0;
-		for (int i=0; i<len;) {
-			size_t lenChar = DBCSIsLeadByte(codePage, s[i]) ? 2 : 1;
+		for (size_t i=0; i<text.length();) {
+			size_t lenChar = DBCSIsLeadByte(codePage, text[i]) ? 2 : 1;
 			qreal xPosition = tl.cursorToX(ui+1);
-			for (unsigned int bytePos=0; (bytePos<lenChar) && (i<len); bytePos++) {
+			for (unsigned int bytePos=0; (bytePos<lenChar) && (i<text.length()); bytePos++) {
 				positions[i++] = xPosition;
 			}
 			ui++;
 		}
 	} else {
 		// Single byte encoding
-		for (int i=0; i<len; i++) {
+		for (int i=0; i<static_cast<int>(text.length()); i++) {
 			positions[i] = tl.cursorToX(i+1);
 		}
 	}
 }
 
-XYPOSITION SurfaceImpl::WidthText(Font &font, const char *s, int len)
+XYPOSITION SurfaceImpl::WidthText(Font &font, std::string_view text)
 {
 	QFontMetricsF metrics(*FontPointer(font), device);
 	SetCodec(font);
-	QString string = codec->toUnicode(s, len);
-	return metrics.width(string);
-}
-
-XYPOSITION SurfaceImpl::WidthChar(Font &font, char ch)
-{
-	QFontMetricsF metrics(*FontPointer(font), device);
-	return metrics.width(ch);
+	QString su = UnicodeFromText(codec, text);
+	return metrics.width(su);
 }
 
 XYPOSITION SurfaceImpl::Ascent(Font &font)
@@ -561,6 +571,10 @@ void SurfaceImpl::SetDBCSMode(int codePage_)
 	codePage = codePage_;
 }
 
+void SurfaceImpl::SetBidiR2L(bool)
+{
+}
+
 QPaintDevice *SurfaceImpl::GetPaintDevice()
 {
 	return device;
@@ -569,8 +583,7 @@ QPaintDevice *SurfaceImpl::GetPaintDevice()
 QPainter *SurfaceImpl::GetPainter()
 {
 	Q_ASSERT(device);
-
-	if (painter == 0) {
+	if (!painter) {
 		if (device->paintingActive()) {
 			painter = device->paintEngine()->painter();
 		} else {
@@ -595,7 +608,7 @@ Surface *Surface::Allocate(int)
 //----------------------------------------------------------------------
 
 namespace {
-QWidget *window(WindowID wid)
+QWidget *window(WindowID wid) noexcept
 {
 	return static_cast<QWidget *>(wid);
 }
@@ -607,11 +620,9 @@ void Window::Destroy()
 {
 	if (wid)
 		delete window(wid);
-
-	wid = 0;
+	wid = nullptr;
 }
-
-PRectangle Window::GetPosition()
+PRectangle Window::GetPosition() const
 {
 	// Before any size allocated pretend its 1000 wide so not scrolled
 	return wid ? PRectFromQRect(window(wid)->frameGeometry()) : PRectangle(0, 0, 1000, 1000);
@@ -623,9 +634,9 @@ void Window::SetPosition(PRectangle rc)
 		window(wid)->setGeometry(QRectFromPRect(rc));
 }
 
-void Window::SetPositionRelative(PRectangle rc, Window relativeTo)
+void Window::SetPositionRelative(PRectangle rc, const Window *relativeTo)
 {
-	QPoint oPos = window(relativeTo.wid)->mapToGlobal(QPoint(0,0));
+	QPoint oPos = window(relativeTo->wid)->mapToGlobal(QPoint(0,0));
 	int ox = oPos.x();
 	int oy = oPos.y();
 	ox += rc.left;
@@ -651,7 +662,7 @@ void Window::SetPositionRelative(PRectangle rc, Window relativeTo)
 	window(wid)->resize(sizex, sizey);
 }
 
-PRectangle Window::GetClientPosition()
+PRectangle Window::GetClientPosition() const
 {
 	// The client position is the window position
 	return GetPosition();
@@ -719,8 +730,23 @@ PRectangle Window::GetMonitorRect(Point pt)
 	        rectScreen.right(), rectScreen.bottom());
 }
 
-
 //----------------------------------------------------------------------
+class ListWidget : public QListWidget {
+public:
+	explicit ListWidget(QWidget *parent);
+	virtual ~ListWidget();
+
+	void setDelegate(IListBoxDelegate *lbDelegate);
+	void selectionChanged();
+
+protected:
+	void mouseReleaseEvent(QMouseEvent * event) override;
+	void mouseDoubleClickEvent(QMouseEvent *event) override;
+	QStyleOptionViewItem viewOptions() const override;
+
+private:
+	IListBoxDelegate *delegate;
+};
 
 class ListBoxImpl : public ListBox {
 public:
@@ -749,30 +775,13 @@ public:
 	void ClearRegisteredImages() override;
 	void SetDelegate(IListBoxDelegate *lbDelegate) override;
 	void SetList(const char *list, char separator, char typesep) override;
+
+	ListWidget *GetWidget() const;
 private:
 	bool unicodeMode;
 	int visibleRows;
 	QMap<int,QPixmap> images;
 };
-
-class ListWidget : public QListWidget {
-public:
-	explicit ListWidget(QWidget *parent);
-	virtual ~ListWidget();
-
-	void setDelegate(IListBoxDelegate *lbDelegate);
-	void selectionChanged();
-
-protected:
-	void mouseReleaseEvent(QMouseEvent * event) override;
-	void mouseDoubleClickEvent(QMouseEvent *event) override;
-	QStyleOptionViewItem viewOptions() const override;
-
-private:
-	IListBoxDelegate *delegate;
-};
-
-
 ListBoxImpl::ListBoxImpl()
 : unicodeMode(false), visibleRows(5)
 {}
@@ -794,7 +803,7 @@ void ListBoxImpl::Create(Window &parent,
 #if defined(Q_OS_WIN)
 	// On Windows, Qt::ToolTip causes a crash when the list is clicked on
 	// so Qt::Tool is used.
-	list->setParent(0, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint
+	list->setParent(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 		| Qt::WindowDoesNotAcceptFocus
 #endif
@@ -804,7 +813,7 @@ void ListBoxImpl::Create(Window &parent,
 	// keyboard stops working. Qt::ToolTip works but its only really
 	// documented for tooltips.
 	// On Linux / X this setting allows clicking on list items.
-	list->setParent(0, Qt::ToolTip | Qt::FramelessWindowHint);
+	list->setParent(nullptr, Qt::ToolTip | Qt::FramelessWindowHint);
 #endif
 	list->setAttribute(Qt::WA_ShowWithoutActivating);
 	list->setFocusPolicy(Qt::NoFocus);
@@ -825,13 +834,11 @@ void ListBoxImpl::Create(Window &parent,
 
 	wid = list;
 }
-
 void ListBoxImpl::SetFont(Font &font)
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	list->setFont(*FontPointer(font));
 }
-
 void ListBoxImpl::SetAverageCharWidth(int /*width*/) {}
 
 void ListBoxImpl::SetVisibleRows(int rows)
@@ -843,11 +850,9 @@ int ListBoxImpl::GetVisibleRows() const
 {
 	return visibleRows;
 }
-
 PRectangle ListBoxImpl::GetDesiredRect()
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
-
+	ListWidget *list = GetWidget();
 	int rows = Length();
 	if (rows == 0 || rows > visibleRows) {
 		rows = visibleRows;
@@ -863,11 +868,9 @@ PRectangle ListBoxImpl::GetDesiredRect()
 
 	return PRectangle(0, 0, width, height);
 }
-
 int ListBoxImpl::CaretFromEdge()
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
-
+	ListWidget *list = GetWidget();
 	int maxIconWidth = 0;
 	foreach (QPixmap im, images) {
 		if (maxIconWidth < im.width())
@@ -885,17 +888,14 @@ int ListBoxImpl::CaretFromEdge()
 #endif
 	return maxIconWidth + (2 * list->frameWidth()) + extra;
 }
-
 void ListBoxImpl::Clear()
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	list->clear();
 }
-
 void ListBoxImpl::Append(char *s, int type)
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
-
+	ListWidget *list = GetWidget();
 	QString str = unicodeMode ? QString::fromUtf8(s) : QString::fromLocal8Bit(s);
 	QIcon icon;
 	if (type >= 0) {
@@ -904,16 +904,14 @@ void ListBoxImpl::Append(char *s, int type)
 	}
 	new QListWidgetItem(icon, str, list);
 }
-
 int ListBoxImpl::Length()
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	return list->count();
 }
-
 void ListBoxImpl::Select(int n)
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	QModelIndex index = list->model()->index(n, 0);
 	if (index.isValid()) {
 		QRect row_rect = list->visualRect(index);
@@ -924,19 +922,16 @@ void ListBoxImpl::Select(int n)
 	list->setCurrentRow(n);
 	list->selectionChanged();
 }
-
 int ListBoxImpl::GetSelection()
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	return list->currentRow();
 }
-
 int ListBoxImpl::Find(const char *prefix)
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	QString sPrefix = unicodeMode ? QString::fromUtf8(prefix) : QString::fromLocal8Bit(prefix);
 	QList<QListWidgetItem *> ms = list->findItems(sPrefix, Qt::MatchStartsWith);
-
 	int result = -1;
 	if (!ms.isEmpty()) {
 		result = list->row(ms.first());
@@ -944,10 +939,9 @@ int ListBoxImpl::Find(const char *prefix)
 
 	return result;
 }
-
 void ListBoxImpl::GetValue(int n, char *value, int len)
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	QListWidgetItem *item = list->item(n);
 	QString str = item->data(Qt::DisplayRole).toString();
 	QByteArray bytes = unicodeMode ? str.toUtf8() : str.toLocal8Bit();
@@ -959,9 +953,8 @@ void ListBoxImpl::GetValue(int n, char *value, int len)
 void ListBoxImpl::RegisterQPixmapImage(int type, const QPixmap& pm)
 {
 	images[type] = pm;
-
-	ListWidget *list = static_cast<ListWidget *>(wid);
-	if (list != NULL) {
+	ListWidget *list = GetWidget();
+	if (list) {
 		QSize iconSize = list->iconSize();
 		if (pm.width() > iconSize.width() || pm.height() > iconSize.height())
 			list->setIconSize(QSize(qMax(pm.width(), iconSize.width()),
@@ -985,18 +978,15 @@ void ListBoxImpl::RegisterRGBAImage(int type, int width, int height, const unsig
 void ListBoxImpl::ClearRegisteredImages()
 {
 	images.clear();
-
-	ListWidget *list = static_cast<ListWidget *>(wid);
-	if (list != NULL)
+	ListWidget *list = GetWidget();
+	if (list)
 		list->setIconSize(QSize(0, 0));
 }
-
 void ListBoxImpl::SetDelegate(IListBoxDelegate *lbDelegate)
 {
-	ListWidget *list = static_cast<ListWidget *>(wid);
+	ListWidget *list = GetWidget();
 	list->setDelegate(lbDelegate);
 }
-
 void ListBoxImpl::SetList(const char *list, char separator, char typesep)
 {
 	// This method is *not* platform dependent.
@@ -1005,7 +995,7 @@ void ListBoxImpl::SetList(const char *list, char separator, char typesep)
 	size_t count = strlen(list) + 1;
 	std::vector<char> words(list, list+count);
 	char *startword = &words[0];
-	char *numword = NULL;
+	char *numword = nullptr;
 	int i = 0;
 	for (; words[i]; i++) {
 		if (words[i] == separator) {
@@ -1014,7 +1004,7 @@ void ListBoxImpl::SetList(const char *list, char separator, char typesep)
 				*numword = '\0';
 			Append(startword, numword?atoi(numword + 1):-1);
 			startword = &words[0] + i + 1;
-			numword = NULL;
+			numword = nullptr;
 		} else if (words[i] == typesep) {
 			numword = &words[0] + i;
 		}
@@ -1025,20 +1015,21 @@ void ListBoxImpl::SetList(const char *list, char separator, char typesep)
 		Append(startword, numword?atoi(numword + 1):-1);
 	}
 }
+ListWidget *ListBoxImpl::GetWidget() const
+{
+	return static_cast<ListWidget *>(wid);
+}
 
-ListBox::ListBox() {}
-
+ListBox::ListBox() noexcept {}
 ListBox::~ListBox() {}
 
 ListBox *ListBox::Allocate()
 {
 	return new ListBoxImpl();
 }
-
 ListWidget::ListWidget(QWidget *parent)
-: QListWidget(parent), delegate(0)
+: QListWidget(parent), delegate(nullptr)
 {}
-
 ListWidget::~ListWidget() {}
 
 void ListWidget::setDelegate(IListBoxDelegate *lbDelegate)
@@ -1072,11 +1063,8 @@ QStyleOptionViewItem ListWidget::viewOptions() const
 	result.state |= QStyle::State_Active;
 	return result;
 }
-
 //----------------------------------------------------------------------
-
-Menu::Menu() : mid(0) {}
-
+Menu::Menu() noexcept : mid(nullptr) {}
 void Menu::CreatePopUp()
 {
 	Destroy();
@@ -1089,9 +1077,8 @@ void Menu::Destroy()
 		QMenu *menu = static_cast<QMenu *>(mid);
 		delete menu;
 	}
-	mid = 0;
+	mid = nullptr;
 }
-
 void Menu::Show(Point pt, Window & /*w*/)
 {
 	QMenu *menu = static_cast<QMenu *>(mid);
@@ -1109,13 +1096,17 @@ public:
 		QString path = QString::fromUtf8(modulePath);
 		lib = new QLibrary(path);
 	}
+	// Deleted so DynamicLibraryImpl objects can not be copied
+	DynamicLibraryImpl(const DynamicLibraryImpl &) = delete;
+	DynamicLibraryImpl(DynamicLibraryImpl &&) = delete;
+	DynamicLibraryImpl &operator=(const DynamicLibraryImpl &) = delete;
+	DynamicLibraryImpl &operator=(DynamicLibraryImpl &&) = delete;
 
 	virtual ~DynamicLibraryImpl() {
 		if (lib)
 			lib->unload();
-		lib = 0;
+		lib = nullptr;
 	}
-
 	Function FindFunction(const char *name) override {
 		if (lib) {
 			// C++ standard doesn't like casts between function pointers and void pointers so use a union
@@ -1130,14 +1121,12 @@ public:
 			fnConv.fp = lib->resolve(name);
 			return fnConv.f;
 		}
-		return NULL;
+		return nullptr;
 	}
-
 	bool IsValid() override {
-		return lib != NULL;
+		return lib != nullptr;
 	}
 };
-
 DynamicLibrary *DynamicLibrary::Load(const char *modulePath)
 {
 	return static_cast<DynamicLibrary *>(new DynamicLibraryImpl(modulePath));
@@ -1208,32 +1197,6 @@ void Platform::Assert(const char *c, const char *file, int line)
 		strcat(buffer, "\n");
 		Platform::DebugDisplay(buffer);
 	}
-}
-
-//----------------------------------------------------------------------
-
-static QElapsedTimer timer;
-
-ElapsedTime::ElapsedTime() : bigBit(0), littleBit(0)
-{
-	if (!timer.isValid()) {
-		timer.start();
-	}
-	qint64 ns64Now = timer.nsecsElapsed();
-	bigBit = static_cast<unsigned long>(ns64Now >> 32);
-	littleBit = static_cast<unsigned long>(ns64Now & 0xFFFFFFFF);
-}
-
-double ElapsedTime::Duration(bool reset)
-{
-	qint64 ns64Now = timer.nsecsElapsed();
-	qint64 ns64Start = (static_cast<qint64>(static_cast<unsigned long>(bigBit)) << 32) + static_cast<unsigned long>(littleBit);
-	double result = ns64Now - ns64Start;
-	if (reset) {
-		bigBit = static_cast<unsigned long>(ns64Now >> 32);
-		littleBit = static_cast<unsigned long>(ns64Now & 0xFFFFFFFF);
-	}
-	return result / 1000000000.0;	// 1 billion nanoseconds in a second
 }
 
 }
