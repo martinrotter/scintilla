@@ -1819,6 +1819,14 @@ sptr_t ScintillaEdit::modEventMask() const {
     return send(SCI_GETMODEVENTMASK, 0, 0);
 }
 
+void ScintillaEdit::setCommandEvents(bool commandEvents) {
+    send(SCI_SETCOMMANDEVENTS, commandEvents, 0);
+}
+
+bool ScintillaEdit::commandEvents() const {
+    return send(SCI_GETCOMMANDEVENTS, 0, 0);
+}
+
 void ScintillaEdit::setFocus(bool focus) {
     send(SCI_SETFOCUS, focus, 0);
 }
@@ -2887,8 +2895,8 @@ void ScintillaEdit::releaseLineCharacterIndex(sptr_t lineCharacterIndex) {
     send(SCI_RELEASELINECHARACTERINDEX, lineCharacterIndex, 0);
 }
 
-sptr_t ScintillaEdit::lineFromIndexPosition(sptr_t posUTF32, sptr_t lineCharacterIndex) {
-    return send(SCI_LINEFROMINDEXPOSITION, posUTF32, lineCharacterIndex);
+sptr_t ScintillaEdit::lineFromIndexPosition(sptr_t pos, sptr_t lineCharacterIndex) {
+    return send(SCI_LINEFROMINDEXPOSITION, pos, lineCharacterIndex);
 }
 
 sptr_t ScintillaEdit::indexPositionFromLine(sptr_t line, sptr_t lineCharacterIndex) {
