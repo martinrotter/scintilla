@@ -12,11 +12,7 @@ TEMPLATE = lib
 CONFIG += lib_bundle
 CONFIG += c++1z
 
-VERSION = 4.1.2
-
-win32 {
-        QMAKE_CXXFLAGS += -std:c++latest
-}
+VERSION = 4.1.3
 
 SOURCES += \
     ScintillaEdit.cpp \
